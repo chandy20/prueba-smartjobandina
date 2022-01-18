@@ -71,6 +71,9 @@ func (b *BeerRepository) Save(beer model.Beer) error {
 			"currency": {
 				S: aws.String(beer.Currency),
 			},
+			"active": {
+				N: aws.String("1"),
+			},
 		},
 		TableName:           aws.String(b.tableBeers),
 		ConditionExpression: aws.String("attribute_not_exists(#id)"),
@@ -118,6 +121,60 @@ func (b *BeerRepository) hydrate(items []map[string]*dynamodb.AttributeValue) ([
 			beers[i].Currency = *v.S
 		}
 	}
+	return beers, nil
+}
+
+//List method to list all beers in database
+func (b *BeerRepository) List() ([]model.Beer, error) {
+	logger := b.logger
+	logger.Info("beginning of list beers")
+	out, err := b.client.Query(&dynamodb.QueryInput{
+		TableName:              aws.String(b.tableBeers),
+		IndexName:              aws.String("by_active"),
+		KeyConditionExpression: aws.String("active = :active"),
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":active": {
+				N: aws.String("1"),
+			},
+		},
+	})
+	if err != nil {
+		logger.WithError(err).Error("error listing beers")
+		return []model.Beer{}, err
+	}
+	if len(out.Items) == 0 {
+		logger.Info("no beers found")
+		return []model.Beer{}, nil
+	}
+
+	tmp := out.Items
+	lastEvaluatedKey := out.LastEvaluatedKey
+	for len(lastEvaluatedKey) != 0 {
+		out, err = b.client.Query(&dynamodb.QueryInput{
+			TableName:              aws.String(b.tableBeers),
+			IndexName:              aws.String("by_active"),
+			KeyConditionExpression: aws.String("active = :active"),
+			ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+				":active": {
+					S: aws.String("1"),
+				},
+			},
+			ExclusiveStartKey: lastEvaluatedKey,
+		})
+		lastEvaluatedKey = out.LastEvaluatedKey
+		if err != nil {
+			logger.WithError(err).Error("an error occurred reading another page")
+			return []model.Beer{}, err
+		}
+		tmp = append(tmp, out.Items...)
+	}
+
+	beers, err := b.hydrate(tmp)
+	if err != nil {
+		logger.WithError(err).Error("an error occurred reading another page")
+		return []model.Beer{}, err
+	}
+
 	return beers, nil
 }
 

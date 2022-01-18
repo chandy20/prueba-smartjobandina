@@ -27,6 +27,10 @@ func createBeersTable(client *dynamodb.DynamoDB, table string, t *testing.T) {
 				AttributeName: aws.String("id"),
 				AttributeType: aws.String("S"),
 			},
+			{
+				AttributeName: aws.String("active"),
+				AttributeType: aws.String("N"),
+			},
 		},
 		KeySchema: []*dynamodb.KeySchemaElement{
 			{
@@ -38,6 +42,24 @@ func createBeersTable(client *dynamodb.DynamoDB, table string, t *testing.T) {
 		ProvisionedThroughput: &dynamodb.ProvisionedThroughput{
 			ReadCapacityUnits:  aws.Int64(5),
 			WriteCapacityUnits: aws.Int64(5),
+		},
+		GlobalSecondaryIndexes: []*dynamodb.GlobalSecondaryIndex{
+			{
+				IndexName: aws.String("by_active"),
+				KeySchema: []*dynamodb.KeySchemaElement{
+					{
+						AttributeName: aws.String("active"),
+						KeyType:       aws.String("HASH"),
+					},
+				},
+				Projection: &dynamodb.Projection{
+					ProjectionType: aws.String("ALL"),
+				},
+				ProvisionedThroughput: &dynamodb.ProvisionedThroughput{
+					ReadCapacityUnits:  aws.Int64(5),
+					WriteCapacityUnits: aws.Int64(5),
+				},
+			},
 		},
 	})
 	if err != nil {
@@ -83,6 +105,83 @@ func TestBeerRepository_SaveAndFind(t *testing.T) {
 
 	if beerGot.ID > 0 {
 		t.Errorf("the test musn't return any beer but return %v", beerGot)
+	}
+
+}
+
+func TestBeerRepository_SaveAndList(t *testing.T) {
+	tableBeers := "table_warehouses" + postfix()
+	closer, client := dynamodbServerStart(t)
+	defer closer()
+	createBeersTable(client, tableBeers, t)
+
+	beersToSave := []model.Beer{
+		{
+			ID:       1,
+			Name:     "Pilsen",
+			Brewery:  "Bavaria",
+			Country:  "Colombia",
+			Price:    2400,
+			Currency: "COP",
+		},
+		{
+			ID:       2,
+			Name:     "Brava",
+			Brewery:  "Bavaria",
+			Country:  "Colombia",
+			Price:    2000,
+			Currency: "COP",
+		},
+		{
+			ID:       3,
+			Name:     "Corona",
+			Brewery:  "Bavaria",
+			Country:  "Mexico",
+			Price:    200,
+			Currency: "MXN",
+		},
+		{
+			ID:       4,
+			Name:     "Budweiser",
+			Brewery:  "Bavaria",
+			Country:  "Colombia",
+			Price:    2.5,
+			Currency: "USD",
+		},
+		{
+			ID:       5,
+			Name:     "Leona",
+			Brewery:  "Bavaria",
+			Country:  "Colombia",
+			Price:    2000,
+			Currency: "COP",
+		},
+		{
+			ID:       6,
+			Name:     "Reds",
+			Brewery:  "Bavaria",
+			Country:  "Colombia",
+			Price:    3,
+			Currency: "EUR",
+		},
+	}
+
+	beerRepository := NewBeerRepository(client, tableBeers, logrus.New())
+
+	for _, beer := range beersToSave {
+		err := beerRepository.Save(beer)
+		if err != nil {
+			t.Errorf("error saving berr %v", err)
+		}
+	}
+
+	beersGot, err := beerRepository.List()
+	if err != nil {
+		t.Errorf("error listing beer %v", err)
+	}
+
+	if len(beersGot) != len(beersToSave) {
+		t.Errorf("test must return %v elements but return %v elemens", len(beersGot), len(beersToSave))
 	}
 
 }
