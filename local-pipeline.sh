@@ -30,7 +30,7 @@ docker run --rm -it \
     --link $DYNAMODB_CONTAINER_NAME \
     -v ~/.local-pipeline/go:/home/ubuntu/go \
     -v $PWD:/home/ubuntu/project \
-    -e PACKAGES_OMIT="node_modules|01_importer|support" \
+    -e PACKAGES_OMIT="node_modules" \
     -e CI_COVERAGE_MIN=79 \
     -e CI_STATIC_CHECK_ERRORS_MAX=0 \
     -e CI_FORMAT_ERRORS_MAX=0 \

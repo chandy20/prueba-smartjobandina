@@ -3,17 +3,20 @@ package ctx
 import (
 	"context"
 	"encoding/json"
-	"github.com/chandy20/prueba-smartjobandina/beer/lib"
+	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/chandy20/prueba-smartjobandina/beer/lib"
 	"github.com/chandy20/prueba-smartjobandina/beer/model"
 	"github.com/sirupsen/logrus"
 )
 
 //beerRepositoryInterface contract for beer repository
 type beerRepositoryInterface interface {
-	List() ([]model.Beer, error)
+	Find(int) (model.Beer, error)
 }
 
 //Handler main struct for lambda
@@ -27,25 +30,34 @@ func (h *Handler) Handler(
 	_ context.Context,
 	req events.APIGatewayProxyRequest,
 ) (events.APIGatewayProxyResponse, error) {
-	logger := h.logger.WithField("request_body", req.Body)
-	logger.Info("Beginning of execution of lambda")
+	IDString := req.PathParameters["beerID"]
+	if strings.TrimSpace(IDString) == "" {
+		return lib.ResponseError(http.StatusBadRequest, errors.New("beerID_can_not_be_empty")), nil
+	}
 
-	beers, err := h.beersRepository.List()
+	ID, err := strconv.Atoi(IDString)
 	if err != nil {
-		logger.WithError(err).Error("error finding beers")
+		return lib.ResponseError(http.StatusBadRequest, errors.New("beerID_is_not_a_number")), nil
+
+	}
+
+	beer, err := h.beersRepository.Find(ID)
+	if err != nil {
 		return lib.ResponseError(http.StatusInternalServerError, err), nil
-	}
-	if len(beers) == 0 {
-		return lib.EmptyResponse(http.StatusAccepted), nil
+
 	}
 
-	response, err := json.Marshal(beers)
+	if beer.ID == 0 {
+		return lib.ResponseError(http.StatusNotFound, errors.New("beerID_does_not_exist")), nil
+	}
+
+	response, err := json.Marshal(beer)
 	if err != nil {
-		logger.WithError(err).Error("error marshaling beers")
 		return lib.ResponseError(http.StatusInternalServerError, err), nil
 	}
 
 	return lib.JSONResponse(http.StatusOK, response), nil
+
 }
 
 //NewHandler construct for Handler

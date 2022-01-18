@@ -1,11 +1,11 @@
 package ctx
 
 import (
-	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"github.com/chandy20/prueba-smartjobandina/beer/lib"
 	"net/http"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -46,71 +46,39 @@ func (h *Handler) Handler(
 		logger.WithFields(logrus.Fields{
 			"message": req.Body,
 		}).WithError(err).Error("error while unmarshalling")
-		return responseError(http.StatusBadRequest, err), nil
+		return lib.ResponseError(http.StatusBadRequest, err), nil
 	}
 
 	dataToValidate := gojsonschema.NewGoLoader(beer)
 	result, err := gojsonschema.Validate(gojsonschema.NewStringLoader(string(validationSchema)), dataToValidate)
 	if err != nil {
 		logger.WithError(err).Error("error while validating json schema")
-		return responseError(http.StatusBadRequest, err), nil
+		return lib.ResponseError(http.StatusBadRequest, err), nil
 	}
 
 	if !result.Valid() {
 		logger.WithField("errors", result.Errors()).Error("validation errors found")
-		return responseError(http.StatusBadRequest, errors.New(result.Errors()[0].String())), nil
+		return lib.ResponseError(http.StatusBadRequest, errors.New(result.Errors()[0].String())), nil
 	}
 
 	beerGot, err := h.beersRepository.Find(beer.ID)
 	if err != nil {
 		logger.WithError(err).Error("error finding beer")
-		return responseError(http.StatusInternalServerError, err), nil
+		return lib.ResponseError(http.StatusInternalServerError, err), nil
 	}
 
 	if beerGot.ID > 0 {
 		logger.WithField("beer", beerGot).Error("beer already created")
-		return responseError(http.StatusConflict, errBeerAlreadyCreated), nil
+		return lib.ResponseError(http.StatusConflict, errBeerAlreadyCreated), nil
 	}
 
 	err = h.beersRepository.Save(beer)
 	if err != nil {
 		logger.WithField("beer", beer).Error("error saving  beer")
-		return responseError(http.StatusInternalServerError, err), nil
+		return lib.ResponseError(http.StatusInternalServerError, err), nil
 	}
-	return emptyResponse(http.StatusCreated), nil
-}
 
-// emptyResponse func for response
-func emptyResponse(statusCode int) events.APIGatewayProxyResponse {
-	resp := events.APIGatewayProxyResponse{
-		StatusCode:      statusCode,
-		IsBase64Encoded: false,
-		Headers: map[string]string{
-			"Content-Type": "text/plain",
-		},
-	}
-	return resp
-}
-
-//responseError function to build json error
-func responseError(statusCode int, err error) events.APIGatewayProxyResponse {
-
-	body, _ := json.Marshal(map[string]interface{}{
-		"message": err.Error(),
-	})
-	var buf bytes.Buffer
-	json.HTMLEscape(&buf, body)
-	resp := events.APIGatewayProxyResponse{
-		StatusCode:      statusCode,
-		IsBase64Encoded: false,
-		Body:            buf.String(),
-		Headers: map[string]string{
-			"Content-Type":                     "application/json",
-			"Access-Control-Allow-Origin":      "*",
-			"Access-Control-Allow-Credentials": "true",
-		},
-	}
-	return resp
+	return lib.EmptyResponse(http.StatusCreated), nil
 }
 
 //NewHandler construct for Handler
