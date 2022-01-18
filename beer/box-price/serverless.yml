@@ -1,25 +1,27 @@
-service: beers-box-price
+service: beers-find
+
 frameworkVersion: ">=1.28.0 <2.0.0"
 
 plugins:
   - serverless-domain-manager
 
 custom:
-  active:       ${file(../../conf.${self:provider.stage}.yml):conf}
+  active: ${file(../../conf.${self:provider.stage}.yml):conf}
   customDomain: ${file(../../conf.${self:provider.stage}.yml):pickingDomain}
-  serviceName:  beers-box-price
+  serviceName: beers-find
 
 provider:
   name: aws
   runtime: go1.x
-  stage:   ${opt:stage, 'dev'}
-  region:  us-east-1
+  stage: ${opt:stage, 'dev'}
+  region: us-east-1
   memorySize: 1024
   deploymentBucket:
     name: ${self:custom.active.deployment_bucket}
   deploymentPrefix: ${self:custom.active.deployment_prefix}
   environment:
-    DYNAMODB_BEERS:               ${self:custom.active.dynamodb_beers}
+    DYNAMODB_BEERS: ${self:custom.active.dynamodb_beers}
+    ACCESS_KEY_CURRENCY: { self:custom.active.access_key_currency }
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -44,7 +46,7 @@ functions:
     handler: bin/v1
     package:
       include:
-        - ./bin/v1/beers/{beerID}/boxprice
+        - ./bin/v1/beers/{beerID}
     timeout: 30
     events:
       - http:

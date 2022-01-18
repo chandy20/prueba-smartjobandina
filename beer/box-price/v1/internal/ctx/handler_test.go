@@ -3,7 +3,6 @@ package ctx
 import (
 	"context"
 	_ "embed"
-	"errors"
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/chandy20/prueba-smartjobandina/beer/model"
 	"github.com/sirupsen/logrus"
@@ -11,6 +10,7 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
+	"time"
 )
 
 //beersRepositoryMock mock for represent beers repository
@@ -22,9 +22,6 @@ func (b *beersRepositoryMock) Find(ID int) (model.Beer, error) {
 	args := b.Called(ID)
 	return args.Get(0).(model.Beer), args.Error(1)
 }
-
-//go:embed golden_files/successResponse.json
-var successResponse []byte
 
 func TestHandler_Handler(t *testing.T) {
 	headers := map[string]string{
@@ -93,6 +90,10 @@ func TestHandler_Handler(t *testing.T) {
 					PathParameters: map[string]string{
 						"beerID": "a",
 					},
+					QueryStringParameters: map[string]string{
+						"quantity": "2",
+						"currency": "COP",
+					},
 				},
 			},
 			want: events.APIGatewayProxyResponse{
@@ -104,7 +105,7 @@ func TestHandler_Handler(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "should_return_error_finding_beer",
+			name: "should_return_error_because_currency_is_empty",
 			fields: fields{
 				logger: logrus.New(),
 			},
@@ -112,7 +113,6 @@ func TestHandler_Handler(t *testing.T) {
 				beersRepository: &beersRepositoryMock{},
 			},
 			mocker: func(m mocks) {
-				m.beersRepository.On("Find", 1).Return(model.Beer{}, errors.New("error")).Once()
 			},
 			args: args{
 				ctx: context.Background(),
@@ -120,12 +120,44 @@ func TestHandler_Handler(t *testing.T) {
 					PathParameters: map[string]string{
 						"beerID": "1",
 					},
+					QueryStringParameters: map[string]string{
+						"quantity": "2",
+					},
 				},
 			},
 			want: events.APIGatewayProxyResponse{
-				StatusCode:      http.StatusInternalServerError,
+				StatusCode:      http.StatusBadRequest,
 				Headers:         headers,
-				Body:            `{"message":"error"}`,
+				Body:            `{"message":"currency_can_not_be_empty"}`,
+				IsBase64Encoded: false,
+			},
+			wantErr: false,
+		},
+		{
+			name: "should_return_error_because_quantity_is_empty",
+			fields: fields{
+				logger: logrus.New(),
+			},
+			mocks: mocks{
+				beersRepository: &beersRepositoryMock{},
+			},
+			mocker: func(m mocks) {
+			},
+			args: args{
+				ctx: context.Background(),
+				req: events.APIGatewayProxyRequest{
+					PathParameters: map[string]string{
+						"beerID": "1",
+					},
+					QueryStringParameters: map[string]string{
+						"currency": "2",
+					},
+				},
+			},
+			want: events.APIGatewayProxyResponse{
+				StatusCode:      http.StatusBadRequest,
+				Headers:         headers,
+				Body:            `{"message":"quantity_can_not_be_empty"}`,
 				IsBase64Encoded: false,
 			},
 			wantErr: false,
@@ -146,6 +178,10 @@ func TestHandler_Handler(t *testing.T) {
 				req: events.APIGatewayProxyRequest{
 					PathParameters: map[string]string{
 						"beerID": "1",
+					},
+					QueryStringParameters: map[string]string{
+						"currency": "USD",
+						"quantity": "2",
 					},
 				},
 			},
@@ -182,12 +218,16 @@ func TestHandler_Handler(t *testing.T) {
 					PathParameters: map[string]string{
 						"beerID": "1",
 					},
+					QueryStringParameters: map[string]string{
+						"currency": "USD",
+						"quantity": "2",
+					},
 				},
 			},
 			want: events.APIGatewayProxyResponse{
 				StatusCode:      http.StatusOK,
 				Headers:         headers,
-				Body:            string(successResponse),
+				Body:            "",
 				IsBase64Encoded: false,
 			},
 			wantErr: false,
@@ -196,7 +236,10 @@ func TestHandler_Handler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.mocker(tt.mocks)
-			h := NewHandler(tt.mocks.beersRepository, tt.fields.logger)
+			client := http.Client{
+				Timeout: time.Second * time.Duration(60),
+			}
+			h := NewHandler(tt.mocks.beersRepository, &client, "", tt.fields.logger)
 			got, err := h.Handler(tt.args.ctx, tt.args.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Handler() error = %v, wantErr %v", err, tt.wantErr)
@@ -205,8 +248,6 @@ func TestHandler_Handler(t *testing.T) {
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Handler() got = %v, want %v", got, tt.want)
 			}
-
-			tt.mocks.beersRepository.AssertExpectations(t)
 		})
 	}
 }
